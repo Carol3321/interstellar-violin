@@ -111,10 +111,10 @@
       const y = side * (0.012 + V.thick * surface * (0.55 + 0.65 * fbm(z * 9.5, v * 9.5, u * 6)));
       const f1 = fbm(z * 13 + 1.7, v * 13, u * 8 + 3.1);
       const f2 = fbm(z * 37, v * 37 + 9, u * 21);
-      let col = mixc(C.deep, C.ice, clamp(0.20 + f1 * 1.05, 0, 1));
-      col = mixc(col, C.white, Math.pow(clamp(f2, 0, 1), 2.2) * 1.1 * surface);
+      let col = mixc(C.deep, C.ice, clamp(0.32 + f1 * 1.05, 0, 1));
+      col = mixc(col, C.white, Math.pow(clamp(f2, 0, 1), 2.2) * 1.25 * surface);
       col = mixc(col, C.white, Math.pow(q, 7) * 0.95);            // 亮边
-      if (rnd() < 0.03) col = C.white;
+      if (rnd() < 0.06) col = C.white;
       if (hole) {
         col = mixc(C.deep, [0.05, 0.05, 0.22], rnd());             // 孔内压暗
       } else {
@@ -366,15 +366,15 @@
     if (!valid.length) return;
 
     // 音符散布在小提琴周围，略偏向面板一侧
-    for (let n = 0; n < 10; n++) {
+    for (let n = 0; n < 8; n++) {
       const glyph = valid[n % valid.length];
       const ang = rnd() * TAU;
       const rad = rr(6.5, 11.5);
       const cx = Math.cos(ang) * rad;
       const cz = Math.sin(ang) * rad * 1.3;
       const cy = rr(-4, 7);
-      const scale = rr(1.2, 2.4);
-      const spin = rnd() * TAU, tilt = rr(-0.5, 0.5);
+      const scale = rr(0.9, 1.8);
+      const spin = rnd() * TAU, tilt = TILT + rr(-0.3, 0.3);   // 大致贴着琴面，避免总是侧对镜头
       const cs = Math.cos(spin), sn = Math.sin(spin), ct = Math.cos(tilt), st = Math.sin(tilt);
       const col = mixc(mixc(C.ice, C.white, 0.55), C.violet, rnd() * 0.3);
       for (let i = 0; i < glyph.length; i += 1) {
@@ -801,7 +801,7 @@
     const ringDim = lerp(0.02, 1.0, smoothstep(24, 8, camR));
     const spins = [0.09 * Math.sin(t * 0.45), t * 0.28, t * 0.05, t * 0.03];
     const axes = [0, 1, 0, 0];
-    const alphas = FRONT ? [0.55, 0.05, 0, 0.05] : [0.55, 0.58, 0.9 * ringDim, 0.8];
+    const alphas = FRONT ? [0.66, 0.05, 0, 0.05] : [0.66, 0.58, 0.9 * ringDim, 0.8];
     gl.useProgram(progPoints.p);
     gl.uniformMatrix4fv(progPoints.u.uVP, false, vp);
     gl.uniform3f(progPoints.u.uCam, cam.x, cam.y, cam.z);
