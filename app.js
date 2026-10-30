@@ -1,7 +1,8 @@
 /*
  * 星际轨道 · 粒子小提琴
- * 纯 WebGL2 粒子场景：小提琴 / 星河 / 星际隧道 / 音符 / 轨迹线，全部由代码生成，无贴图、无依赖。
- * 视觉参考抖音 @可乐鸡翅^O^ 的 Python(NumPy 手写透视投影 + 粒子) 作品，在浏览器里复刻其构图与运镜。
+ * 纯 WebGL2 粒子场景，无贴图、无依赖。
+ * 结构照参考视频：一把粒子小提琴，琴弦延伸成一条穿过它的五线谱——
+ * 谱线上串着 𝄞 谱号、♪ 音符、△ 三角标记；另有几道虚线弧缠在琴上，弧上按等间距串着 ○ □ ◇ 标记点。
  */
 (() => {
   'use strict';
@@ -36,51 +37,37 @@
     const d = lerp(hash3(xi, yi + 1, zi + 1), hash3(xi + 1, yi + 1, zi + 1), u);
     return lerp(lerp(a, b, v), lerp(c, d, v), w);
   }
-  // 参考视频里那种"冰晶 / 大理石"斑驳质感
+  // 参考里那种冰晶 / 大理石斑驳质感
   const fbm = (x, y, z) =>
     vnoise(x, y, z) * 0.60 + vnoise(x * 2.13, y * 2.13, z * 2.13) * 0.27 + vnoise(x * 4.37, y * 4.37, z * 4.37) * 0.13;
 
-  /* ---------------- 调色板（取自参考视频的青蓝-紫） ---------------- */
+  /* ---------------- 调色板（近白 + 冰蓝，几乎不带紫） ---------------- */
   const C = {
-    white: [0.97, 0.98, 1.00],
-    ice: [0.62, 0.80, 1.00],
-    blue: [0.26, 0.42, 1.00],
-    violet: [0.55, 0.36, 1.00],
-    deep: [0.09, 0.13, 0.50],
+    white: [0.98, 0.99, 1.00],
+    ice: [0.72, 0.85, 1.00],
+    blue: [0.34, 0.50, 1.00],
+    steel: [0.20, 0.30, 0.62],
+    deep: [0.07, 0.10, 0.26],
   };
   const mixc = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 
-  /* ---------------- 几何收集器：四批，各自不同自转轴与速度 ---------------- */
+  /* ---------------- 几何收集器 ---------------- */
   const mk = () => ({ p: [], c: [], s: [], ph: [] });
-  const BATCH = { violin: mk(), galaxy: mk(), tunnel: mk(), rest: mk() };
+  const BATCH = { violin: mk(), ribbon: mk(), mark: mk(), rest: mk() };
   function pt(e, x, y, z, col, size) {
     e.p.push(x, y, z); e.c.push(col[0], col[1], col[2]); e.s.push(size); e.ph.push(rnd());
   }
-  const L = { p: [], c: [], a: [] };
-  function seg(a, b, ca, cb, aa, ab) {
-    L.p.push(a[0], a[1], a[2], b[0], b[1], b[2]);
-    L.c.push(ca[0], ca[1], ca[2], cb[0], cb[1], cb[2]);
-    L.a.push(aa, ab);
-  }
-  function polyline(points, colA, colB, alpha) {
-    for (let i = 0; i < points.length - 1; i++) {
-      const t0 = i / (points.length - 1), t1 = (i + 1) / (points.length - 1);
-      seg(points[i], points[i + 1], mixc(colA, colB, t0), mixc(colA, colB, t1),
-        alpha * (1 - t0 * 0.8), alpha * (1 - t1 * 0.8));
-    }
-  }
 
-  /* ================= 小提琴 =================
-     轴线沿 +Z：琴尾 z=-0.62 → 琴头 z≈1.1；面板法线 +Y。
-     生成后统一放大 VS 倍并绕 Z 倾斜 TILT，让镜头以 3/4 视角看到面板。 */
+  /* ================= 小提琴（轴线沿 +Z，面板法线 +Y） ================= */
   const V = { z0: -0.62, len: 1.18, thick: 0.058 };
-  const VS = 7.0, TILT = -0.42;
+  const VS = 6.2, TILT = -0.12;
+  const BODY_CZ = (V.z0 + V.len / 2) * VS;
 
   (function violin() {
     const e = BATCH.violin;
 
     // 半宽控制点：明显的上下琴箱 + 腰部凹进
-    const WP = [0.148, 0.238, 0.300, 0.324, 0.288, 0.226, 0.212, 0.232, 0.276, 0.300, 0.284, 0.228, 0.172];
+    const WP = [0.148, 0.238, 0.302, 0.328, 0.286, 0.246, 0.172, 0.242, 0.282, 0.306, 0.288, 0.228, 0.172];
     const n = WP.length - 1;
     const halfW = (u) => {
       const x = clamp(u, 0, 1) * n;
@@ -97,7 +84,6 @@
       return Math.abs(Math.abs(v) - center) < 0.0155;
     };
 
-    // 面板 + 背板（透镜壳体），fbm 冰晶质感，边缘提亮
     for (let i = 0; i < 88000; i++) {
       const u = rnd();
       const w = halfW(u);
@@ -111,21 +97,19 @@
       const y = side * (0.012 + V.thick * surface * (0.55 + 0.65 * fbm(z * 9.5, v * 9.5, u * 6)));
       const f1 = fbm(z * 13 + 1.7, v * 13, u * 8 + 3.1);
       const f2 = fbm(z * 37, v * 37 + 9, u * 21);
-      let col = mixc(C.deep, C.ice, clamp(0.32 + f1 * 1.05, 0, 1));
-      col = mixc(col, C.white, Math.pow(clamp(f2, 0, 1), 2.2) * 1.25 * surface);
-      col = mixc(col, C.white, Math.pow(q, 7) * 0.95);            // 亮边
-      if (rnd() < 0.06) col = C.white;
+      let col = mixc(C.steel, C.ice, clamp(0.10 + f1 * 0.85, 0, 1));
+      col = mixc(col, C.white, Math.pow(clamp(f2, 0, 1), 2.4) * 1.1 * surface);
+      if (rnd() < 0.02) col = C.white;
       if (hole) {
-        col = mixc(C.deep, [0.05, 0.05, 0.22], rnd());             // 孔内压暗
+        col = mixc(C.deep, [0.03, 0.04, 0.12], rnd());             // 孔内压暗
       } else {
-        // 极简方向光：沿 v 方向压暗 / 提亮，让平板面板有体积感
-        const lit = 0.58 + 0.55 * (v / w + 0.35) * 0.6;
+        const lit = 0.55 + 0.45 * (v / w + 0.35) * 0.6;            // 极简方向光
         col = [col[0] * lit, col[1] * lit, col[2] * lit];
       }
-      pt(e, v, y, z, col, (0.005 + Math.pow(rnd(), 2) * 0.020) * (hole ? 0.6 : 1));
+      pt(e, v, y, z, col, (0.005 + Math.pow(rnd(), 2) * 0.018) * (hole ? 0.6 : 1));
     }
 
-    // 面板上的高光条：几道沿琴身走向的亮线，制造金属 / 冰面反射感
+    // 面板高光条
     for (let s = 0; s < 7; s++) {
       const v0 = (rnd() * 2 - 1) * 0.62;
       const u0 = rr(0.06, 0.9), u1 = Math.min(1, u0 + rr(0.15, 0.5));
@@ -139,18 +123,20 @@
       }
     }
 
-    // 琴身周围的大颗粒柔光，喂给泛光，让主体自带光晕
-    for (let i = 0; i < 900; i++) {
+    // 琴身柔光（喂泛光）
+    for (let i = 0; i < 300; i++) {
       const u = rr(0.05, 0.95);
       const w = halfW(u) * 1.05;
       pt(e, (rnd() * 2 - 1) * w, gauss() * 0.10, zAt(u), mixc(C.blue, C.ice, rnd() * 0.5), 0.10 + rnd() * 0.18);
     }
 
-    // 轮廓线（更硬的高光边）
-    for (let i = 0; i < 9000; i++) {
+    // 轮廓高光：两层，越靠边越亮，让轮廓在加法混合里也立得住
+    for (let i = 0; i < 16000; i++) {
       const u = rnd(), w = halfW(u), s = rnd() < 0.5 ? 1 : -1;
-      const v = s * w * (0.995 + rnd() * 0.008);
-      pt(e, v, (rnd() * 2 - 1) * 0.026, zAt(u), mixc(C.white, C.ice, rnd() * 0.5), 0.008 + rnd() * 0.008);
+      const outer = i % 3 !== 0;
+      const v = s * w * (outer ? 0.99 + rnd() * 0.008 : 0.93 + rnd() * 0.05);
+      pt(e, v, (rnd() * 2 - 1) * 0.03, zAt(u),
+        outer ? C.white : mixc(C.white, C.ice, 0.5), outer ? 0.016 + rnd() * 0.010 : 0.012);
     }
 
     // f 孔亮边 + 孔内暗部
@@ -158,37 +144,36 @@
       const u = rr(0.345, 0.60);
       const s = rnd() < 0.5 ? 1 : -1;
       const center = 0.086 + (u - 0.47) * 0.20;
-      const edge = s * (center + (rnd() < 0.5 ? 1 : -1) * 0.018);
-      pt(e, edge, 0.086 + gauss() * 0.002, zAt(u), mixc(C.white, C.ice, rnd() * 0.4), 0.010 + rnd() * 0.008);
+      pt(e, s * (center + (rnd() < 0.5 ? 1 : -1) * 0.018), 0.086 + gauss() * 0.002, zAt(u),
+        mixc(C.white, C.ice, rnd() * 0.3), 0.010 + rnd() * 0.008);
     }
-    for (let i = 0; i < 2200; i++) {
+    for (let i = 0; i < 1800; i++) {
       const u = rr(0.345, 0.60);
       const s = rnd() < 0.5 ? 1 : -1;
       const center = 0.086 + (u - 0.47) * 0.20;
-      pt(e, s * (center + gauss() * 0.006), gauss() * 0.01, zAt(u), C.violet, 0.02);
+      pt(e, s * (center + gauss() * 0.006), gauss() * 0.01, zAt(u), C.blue, 0.02);
     }
 
     // 琴桥
     for (let i = 0; i < 2600; i++) {
-      const u = 0.402 + gauss() * 0.005;
-      const v = gauss() * 0.070;
-      pt(e, v, 0.130 + gauss() * 0.010, zAt(u), mixc(C.white, C.ice, rnd() * 0.5), 0.008 + rnd() * 0.007);
+      pt(e, gauss() * 0.070, 0.130 + gauss() * 0.010, zAt(0.402 + gauss() * 0.005),
+        mixc(C.white, C.ice, rnd() * 0.4), 0.008 + rnd() * 0.007);
     }
 
     // 系弦板
     for (let i = 0; i < 2600; i++) {
       const u = rr(0.03, 0.25);
       const w = 0.044 * (1 - (u - 0.03) * 1.6);
-      pt(e, (rnd() * 2 - 1) * w, 0.070 + gauss() * 0.008, zAt(u), mixc(C.blue, C.violet, rnd()), 0.009 + rnd() * 0.007);
+      pt(e, (rnd() * 2 - 1) * w, 0.070 + gauss() * 0.008, zAt(u), mixc(C.blue, C.steel, rnd()), 0.009 + rnd() * 0.007);
     }
 
-    // 指板：明显更宽的暗面，两侧带亮边
+    // 指板：暗面 + 亮边
     for (let i = 0; i < 9000; i++) {
       const u = rr(0.58, 1.02);
       const w = 0.062 - 0.014 * (u - 0.58);
       const edge = Math.abs(rnd() * 2 - 1) > 0.93;
       pt(e, (rnd() * 2 - 1) * w, 0.058 + gauss() * 0.005, zAt(u),
-        edge ? mixc(C.ice, C.white, rnd()) : mixc(C.deep, C.blue, 0.25 + rnd() * 0.35), 0.006 + rnd() * 0.006);
+        edge ? mixc(C.ice, C.white, rnd()) : mixc(C.deep, C.steel, 0.3 + rnd() * 0.4), 0.006 + rnd() * 0.006);
     }
 
     // 琴颈
@@ -196,10 +181,10 @@
       const z = rr(0.54, 1.00);
       const w = 0.042 - 0.010 * (z - 0.54);
       pt(e, (rnd() * 2 - 1) * w, -0.03 + (rnd() * 2 - 1) * 0.020, z,
-        mixc(C.deep, C.ice, 0.35 + rnd() * 0.55), 0.006 + rnd() * 0.006);
+        mixc(C.steel, C.ice, 0.4 + rnd() * 0.5), 0.006 + rnd() * 0.006);
     }
 
-    // 琴头涡卷（YZ 平面内卷曲）
+    // 琴头涡卷
     for (let i = 0; i < 4200; i++) {
       const s = rnd();
       const ang = s * 8.4 - 1.1;
@@ -208,40 +193,16 @@
         mixc(C.ice, C.white, rnd() * 0.7), 0.007 + rnd() * 0.006);
     }
 
-    // 四根琴弦（最亮的部分，视觉命脉）
-    const strX = [-0.025, -0.0085, 0.0085, 0.025];
-    for (const sx of strX) {
-      for (let i = 0; i < 1100; i++) {
-        const z = lerp(-0.44, 1.00, i / 1099);
-        const y = 0.135 + 0.012 * Math.sin((z + 0.44) / 1.44 * Math.PI) + (z < 0.40 ? (0.40 - z) * 0.06 : 0);
+    // 四根琴弦
+    for (const sx of [-0.025, -0.0085, 0.0085, 0.025]) {
+      for (let i = 0; i < 1200; i++) {
+        const z = lerp(-0.44, 1.02, i / 1199);
+        const y = 0.135 + 0.012 * Math.sin((z + 0.44) / 1.46 * Math.PI) + (z < 0.40 ? (0.40 - z) * 0.06 : 0);
         pt(e, sx + gauss() * 0.0018, y, z, C.white, 0.0055 + rnd() * 0.004);
       }
-      for (let i = 0; i < 90; i++) {   // 弦的柔光
-        const z = rr(-0.44, 1.00);
-        pt(e, sx + gauss() * 0.004, 0.135 + gauss() * 0.006, z, mixc(C.ice, C.white, 0.7), 0.045);
+      for (let i = 0; i < 70; i++) {
+        pt(e, sx + gauss() * 0.004, 0.135 + gauss() * 0.006, rr(-0.44, 1.02), mixc(C.ice, C.white, 0.7), 0.045);
       }
-    }
-
-    // 琴弓：横跨琴弦的细长弓杆 + 弓毛
-    const A = [-0.78, 0.155, 0.44], B = [0.74, 0.135, -0.30], K = [0.0, 0.215, 0.06];
-    const bez = (s) => {
-      const m = 1 - s;
-      return [
-        m * m * A[0] + 2 * m * s * K[0] + s * s * B[0],
-        m * m * A[1] + 2 * m * s * K[1] + s * s * B[1],
-        m * m * A[2] + 2 * m * s * K[2] + s * s * B[2],
-      ];
-    };
-    for (let i = 0; i < 3600; i++) {
-      const p = bez(rnd());
-      pt(e, p[0] + gauss() * 0.007, p[1] + gauss() * 0.007, p[2] + gauss() * 0.007,
-        mixc(C.ice, C.white, rnd() * 0.85), 0.007 + rnd() * 0.006);
-    }
-    for (let i = 0; i < 1400; i++) {          // 弓毛：弓杆下方一条直线
-      const s = rnd();
-      const p = bez(s);
-      pt(e, p[0] * 0.99 + gauss() * 0.002, p[1] - 0.030 + gauss() * 0.002, p[2] * 0.99 + gauss() * 0.002,
-        mixc(C.blue, C.ice, rnd()), 0.0045);
     }
 
     // 放大 + 倾斜
@@ -254,219 +215,291 @@
     }
   })();
 
-  /* ================= 星河（XZ 平面旋涡盘，绕 Y 自转） ================= */
-  (function galaxy() {
-    const e = BATCH.galaxy;
-    const ARMS = 3;
+  /* ================= 五线谱：5 条平行的细亮线，从琴弦延伸出去并在空间里弯折 ================= */
+  // 谱线的中轴（返回 [x,y,z]，s ∈ [-1,1] 沿 +Z 方向）
+  const staffAxis = (s) => [
+    2.6 * Math.sin(s * 1.15) + 0.9 * Math.sin(s * 3.1),
+    1.05 + 2.4 * Math.sin(s * 1.35 + 0.25) + 0.9 * Math.sin(s * 2.6),
+    s * 12.5,
+  ];
+  const STAFF_GAP = 0.62;
+  const STAFF_HALF = 2;                       // 5 条线：-2..2
 
-    // 内圈星尘
-    for (let i = 0; i < 9000; i++) {
-      const r = 9 + Math.pow(rnd(), 1.7) * 15;
-      const a = rnd() * TAU;
-      pt(e, Math.cos(a) * r, gauss() * 0.7, Math.sin(a) * r, mixc(C.ice, C.white, rnd() * 0.7), 0.02 + rnd() * 0.05);
-    }
+  function staffPoint(line, s) {
+    const a = staffAxis(s);
+    // 用切线附近的"上方向"做偏移，保证 5 条线始终平行
+    const b = staffAxis(s + 0.004);
+    let tx = b[0] - a[0], ty = b[1] - a[1], tz = b[2] - a[2];
+    const tl = Math.hypot(tx, ty, tz) || 1;
+    tx /= tl; ty /= tl; tz /= tl;
+    let ux = 0, uy = 1, uz = 0;                 // up 取 +Y 在切线法平面上的投影
+    const d = uy * ty;
+    ux -= tx * d; uy -= ty * d; uz -= tz * d;
+    const ul = Math.hypot(ux, uy, uz) || 1;
+    const off = line * STAFF_GAP;
+    return [a[0] + (ux / ul) * off, a[1] + (uy / ul) * off, a[2] + (uz / ul) * off];
+  }
 
-    // 旋臂
-    for (let i = 0; i < 46000; i++) {
-      const t = Math.pow(rnd(), 0.55);
-      const r = 12 + t * 56;
-      const arm = i % ARMS;
-      const ang = (r / 68) * 4.9 + arm * (TAU / ARMS) + gauss() * 0.12 * (1.25 - 0.7 * t);
-      const spread = (1 - t) * 0.8 + 0.22;
-      const x = Math.cos(ang) * r + gauss() * spread;
-      const z = Math.sin(ang) * r + gauss() * spread;
-      const y = gauss() * (0.4 + r * 0.02);
-      const near = clamp(1 - t * 0.5, 0, 1);
-      let col = mixc(C.blue, C.ice, near * (0.5 + 0.5 * rnd()));
-      if (rnd() < 0.07) col = mixc(col, C.white, 0.85);
-      if (rnd() < 0.02) col = C.violet;
-      pt(e, x, y, z, col, 0.015 + Math.pow(rnd(), 2) * 0.09);
-    }
-
-    // 极淡星云，补旋臂之间的层次
-    for (let i = 0; i < 5000; i++) {
-      const r = 14 + Math.pow(rnd(), 0.5) * 54;
-      const a = rnd() * TAU;
-      pt(e, Math.cos(a) * r, gauss() * 1.4, Math.sin(a) * r, mixc(C.deep, C.violet, rnd() * 0.4), 0.07 + rnd() * 0.12);
-    }
-  })();
-
-  /* ================= 星际隧道：沿 Z 轴的一串粒子环（三层同心的发光线圈） ================= */
-  (function tunnel() {
-    const e = BATCH.tunnel;
-    const RINGS = 34;
-    for (let i = 0; i < RINGS; i++) {
-      const z = -58 + i * 3.4;
-      const R = 11.5 + 8.5 * Math.pow(0.5 + 0.5 * Math.sin(i * 0.62 + 1.1), 1.5);
-      const bright = 0.65 + 0.35 * Math.sin(i * 1.3);
-      for (let k = 0; k < 1000; k++) {
-        const a = (k / 1000) * TAU * 3 + rr(-0.01, 0.01);
-        const strand = k % 3;
-        const rad = R * (1 + strand * 0.012) * (1 + gauss() * 0.006);
-        const x = Math.cos(a) * rad + gauss() * 0.10;
-        const y = Math.sin(a) * rad + gauss() * 0.10;
-        const zz = z + 0.35 * Math.sin(a * 5 + i * 0.5) + gauss() * 0.10;
-        let col = mixc(C.ice, C.white, 0.25 + 0.45 * bright);
-        if (rnd() < 0.05) col = C.violet;
-        pt(e, x, y, zz, col, 0.10 + rnd() * 0.16);
-      }
-      // 环上更亮的节点
-      for (let k = 0; k < 40; k++) {
-        const a = rnd() * TAU;
-        pt(e, Math.cos(a) * R, Math.sin(a) * R, z + gauss() * 0.15, C.white, 0.16 + rnd() * 0.18);
-      }
-    }
-
-    // 隧道内的浮尘
-    for (let i = 0; i < 10000; i++) {
-      const z = rr(-62, 62);
-      const a = rnd() * TAU;
-      const r = 5 + Math.pow(rnd(), 0.7) * 22;
-      pt(e, Math.cos(a) * r, Math.sin(a) * r, z, mixc(C.ice, C.blue, rnd() * 0.7), 0.02 + rnd() * 0.07);
-    }
-
-    // 远景星点
-    for (let i = 0; i < 7000; i++) {
-      const x = rr(-150, 150), y = rr(-150, 150), z = rr(-150, 150);
-      if (Math.hypot(x, y, z) < 45) continue;
-      pt(e, x, y, z, mixc(C.ice, C.white, rnd()), 0.06 + Math.pow(rnd(), 3) * 0.45);
-    }
-  })();
-
-  /* ================= 音符：从字体取字形做粒子采样 ================= */
-  (function notes() {
-    const e = BATCH.rest;
-    const glyphs = ['♪', '♫', '♩'];
-    const samples = [];
-    for (const ch of glyphs) {
-      const cv = document.createElement('canvas');
-      cv.width = cv.height = 72;
-      const cx = cv.getContext('2d', { willReadFrequently: true });
-      cx.fillStyle = '#fff';
-      cx.textAlign = 'center';
-      cx.textBaseline = 'middle';
-      cx.font = '600 58px "Segoe UI Symbol", "Apple Symbols", serif';
-      cx.fillText(ch, 36, 36);
-      const data = cx.getImageData(0, 0, 72, 72).data;
-      const pts = [];
-      for (let y = 0; y < 72; y++) {
-        for (let x = 0; x < 72; x++) {
-          if (data[(y * 72 + x) * 4 + 3] > 150) {
-            pts.push([(x - 36) / 36, -(y - 36) / 36]);
-            pts.push([(x - 35.5) / 36, -(y - 35.5) / 36]);
-          }
-        }
-      }
-      // 字形缺失时浏览器会画"豆腐块"方框：太方正的就丢掉
-      const xs = pts.map((p) => p[0]);
-      const bw = xs.length ? Math.max(...xs) - Math.min(...xs) : 0;
-      samples.push(pts.length > 60 && bw < 1.5 ? pts : null);
-    }
-    const valid = samples.filter(Boolean);
-    if (!valid.length) return;
-
-    // 音符散布在小提琴周围，略偏向面板一侧
-    for (let n = 0; n < 8; n++) {
-      const glyph = valid[n % valid.length];
-      const ang = rnd() * TAU;
-      const rad = rr(6.5, 11.5);
-      const cx = Math.cos(ang) * rad;
-      const cz = Math.sin(ang) * rad * 1.3;
-      const cy = rr(-4, 7);
-      const scale = rr(0.9, 1.8);
-      const spin = rnd() * TAU, tilt = TILT + rr(-0.3, 0.3);   // 大致贴着琴面，避免总是侧对镜头
-      const cs = Math.cos(spin), sn = Math.sin(spin), ct = Math.cos(tilt), st = Math.sin(tilt);
-      const col = mixc(mixc(C.ice, C.white, 0.55), C.violet, rnd() * 0.3);
-      for (let i = 0; i < glyph.length; i += 1) {
-        const g = glyph[i];
-        const lx = (g[0] + gauss() * 0.010) * scale;
-        const ly = (g[1] + gauss() * 0.010) * scale;
-        const lz = gauss() * 0.03;
-        const ry = ly * ct - lz * st;
-        const rz = ly * st + lz * ct;
-        pt(e, cx + lx * cs - ry * sn, cy + ry, cz + lx * sn + ry * cs + rz, col, 0.05 + rnd() * 0.03);
-      }
-    }
-  })();
-
-  /* ================= 轨迹线：从琴身甩出的细长曲线 + 轨道弧 + 星芒 ================= */
-  (function lines() {
-    // 甩出的轨迹（少而细，参考里它们是点缀不是主角）
-    for (let c = 0; c < 8; c++) {
-      const ang = rnd() * TAU;
-      const start = [Math.cos(ang) * 8.5, rr(-3, 3), Math.sin(ang) * 8.5];
-      const dir = [Math.cos(ang), gauss() * 0.25, Math.sin(ang)];
-      const len = rr(8, 22);
-      const curl = rr(-9, 9);
-      const pts = [];
-      const N = 120;
-      for (let i = 0; i < N; i++) {
-        const s = i / (N - 1);
-        const b = s * s * len * 0.55 + s * len * 0.45;
-        const bend = Math.sin(s * Math.PI * 1.3) * curl;
-        pts.push([
-          start[0] + dir[0] * b - bend * dir[2],
-          start[1] + dir[1] * b + Math.sin(s * 6 + c) * 1.2,
-          start[2] + dir[2] * b + bend * dir[0],
-        ]);
-      }
-      polyline(pts, mixc(C.ice, C.white, 0.5), C.blue, 0.20);
-      for (let i = 5; i < N; i += 11) {
-        const p = pts[i];
-        for (let k = 0; k < 12; k++) {
-          pt(BATCH.rest, p[0] + gauss() * 0.03, p[1] + gauss() * 0.03, p[2] + gauss() * 0.03,
-            mixc(C.white, C.ice, rnd()), 0.05 + rnd() * 0.03);
-        }
-      }
-    }
-
-    // 环绕小提琴的轨道弧
-    for (let r = 0; r < 3; r++) {
-      const rad = rr(11, 17);
-      const tilt = rr(-0.7, 0.7), yaw = rnd() * TAU;
-      const pts = [];
-      const N = 160;
+  (function staff() {
+    const e = BATCH.ribbon;
+    const N = 900;                            // 每条线的点数 → 点链读起来像细实线
+    for (let line = -STAFF_HALF; line <= STAFF_HALF; line++) {
       for (let i = 0; i <= N; i++) {
-        const a = (i / N) * TAU;
-        const x = Math.cos(a) * rad, y = Math.sin(a) * rad * 0.92, z = 0;
-        const x1 = x * Math.cos(yaw) - z * Math.sin(yaw);
-        const z1 = x * Math.sin(yaw) + z * Math.cos(yaw);
-        const y2 = y * Math.cos(tilt) - z1 * Math.sin(tilt);
-        const z2 = y * Math.sin(tilt) + z1 * Math.cos(tilt);
-        pts.push([x1, y2, z2]);
+        const s = -1 + (2 * i) / N;
+        const p = staffPoint(line, s);
+        // 线头的小圆点
+        const isEnd = i === 0 || i === N;
+        const jitter = 0.012;
+        pt(e, p[0] + gauss() * jitter, p[1] + gauss() * jitter, p[2] + gauss() * jitter,
+          isEnd ? C.white : mixc(C.white, C.ice, 0.15 + rnd() * 0.3), isEnd ? 0.075 : 0.034 + rnd() * 0.014);
       }
-      polyline(pts, mixc(C.ice, C.white, 0.5), mixc(C.violet, C.ice, 0.5), 0.16);
-    }
-
-    // 星芒（四角星）
-    for (let i = 0; i < 130; i++) {
-      const r = rr(10, 44);
-      const a = rnd() * TAU;
-      const p = [Math.cos(a) * r, gauss() * 7, Math.sin(a) * r];
-      const s = rr(0.4, 1.1);
-      seg([p[0] - s, p[1], p[2]], [p[0] + s, p[1], p[2]], C.white, C.white, 0, 0.5);
-      seg([p[0], p[1] - s, p[2]], [p[0], p[1] + s, p[2]], C.white, C.white, 0, 0.5);
-      pt(BATCH.rest, p[0], p[1], p[2], C.white, 0.08 + s * 0.14);
     }
   })();
 
-  /* ================= WebGL 资源 ================= */
+  /* ================= 标记点：△ ○ □ ◇，按等间距串在谱线和弧线上 ================= */
+  const MARK_PTS = {};
+  (function buildMarkShapes() {
+    const mkShape = (fn, n) => {
+      const out = [];
+      for (let i = 0; i < n; i++) out.push(fn(i / n));
+      return out;
+    };
+    MARK_PTS.circle = mkShape((t) => [Math.cos(t * TAU) * 0.5, Math.sin(t * TAU) * 0.5], 72);
+    MARK_PTS.square = mkShape((t) => {
+      const a = t * TAU;
+      const k = 0.5 / Math.max(Math.abs(Math.cos(a)), Math.abs(Math.sin(a)));
+      return [Math.cos(a) * k, Math.sin(a) * k];
+    }, 64);
+    MARK_PTS.triangle = mkShape((t) => {
+      const a = t * TAU + Math.PI / 2;
+      const r = 0.5 / Math.max(Math.cos(((a % (TAU / 3)) + TAU) % (TAU / 3) - Math.PI / 3), -0.5);
+      return [Math.cos(a) * Math.min(r, 1), Math.sin(a) * Math.min(r, 1)];
+    }, 64);
+    MARK_PTS.diamond = mkShape((t) => {
+      const a = t * TAU;
+      const k = 0.5 / (Math.abs(Math.cos(a)) + Math.abs(Math.sin(a)));
+      return [Math.cos(a) * k, Math.sin(a) * k];
+    }, 64);
+  })();
+
+  // 在世界坐标 p 处、沿 (right, up) 两个基向量摆一个标记
+  function stampMark(p, right, up, shape, size, col) {
+    const pts = MARK_PTS[shape];
+    for (const g of pts) {
+      const x = p[0] + right[0] * g[0] * size + up[0] * g[1] * size;
+      const y = p[1] + right[1] * g[0] * size + up[1] * g[1] * size;
+      const z = p[2] + right[2] * g[0] * size + up[2] * g[1] * size;
+      pt(BATCH.mark, x, y, z, col, 0.040 + rnd() * 0.016);
+    }
+  }
+
+  // 求谱线在 s 处的局部基（right 沿切线，up 沿谱面法向上方向）
+  function staffBasis(s) {
+    const a = staffAxis(s), b = staffAxis(s + 0.004);
+    let tx = b[0] - a[0], ty = b[1] - a[1], tz = b[2] - a[2];
+    const tl = Math.hypot(tx, ty, tz) || 1;
+    tx /= tl; ty /= tl; tz /= tl;
+    let ux = 0, uy = 1, uz = 0;
+    const d = ux * tx + uy * ty + uz * tz;
+    ux -= tx * d; uy -= ty * d; uz -= tz * d;
+    const ul = Math.hypot(ux, uy, uz) || 1;
+    return { tangent: [tx, ty, tz], up: [ux / ul, uy / ul, uz / ul] };
+  }
+
+  (function staffMarks() {
+    // 三角：沿中间那条线等间距（参考里最显眼的一组）
+    const triLine = 1;
+    for (let i = 0; i < 7; i++) {
+      const s = -0.62 + i * 0.20;
+      const p = staffPoint(triLine, s);
+      const { tangent, up } = staffBasis(s);
+      stampMark(p, tangent, up, 'triangle', 0.40, mixc(C.white, C.ice, 0.15));
+    }
+    // 圆圈：下面那条线
+    for (let i = 0; i < 6; i++) {
+      const s = -0.70 + i * 0.27;
+      const p = staffPoint(-1, s);
+      const { tangent, up } = staffBasis(s);
+      stampMark(p, tangent, up, 'circle', 0.24, mixc(C.white, C.ice, 0.3));
+    }
+    // 菱形：最上面那条线
+    for (let i = 0; i < 4; i++) {
+      const s = -0.35 + i * 0.33;
+      const p = staffPoint(2, s);
+      const { tangent, up } = staffBasis(s);
+      stampMark(p, tangent, up, 'diamond', 0.22, mixc(C.ice, C.white, 0.4));
+    }
+    // 方块：谱线之外的一圈
+    for (let i = 0; i < 3; i++) {
+      const s = -0.05 + i * 0.36;
+      const p = staffPoint(-2, s);
+      const { tangent, up } = staffBasis(s);
+      stampMark(p, tangent, up, 'square', 0.20, mixc(C.ice, C.white, 0.3));
+    }
+  })();
+
+  /* ================= 缠在小提琴上的虚线弧，每道串一种标记 ================= */
+  (function arcs() {
+    const CENTER = [0, 0.6, BODY_CZ];
+    const specs = [
+      { R: 3.3, tilt: 0.55, yaw: 0.2, roll: 0.0, mark: 'circle', dots: 220 },
+      { R: 4.1, tilt: -0.35, yaw: 1.1, roll: 0.4, mark: 'square', dots: 240 },
+      { R: 4.8, tilt: 0.15, yaw: 2.3, roll: -0.3, mark: 'triangle', dots: 260 },
+      { R: 2.9, tilt: -0.75, yaw: 0.7, roll: 0.2, mark: 'diamond', dots: 200 },
+    ];
+    for (const sp of specs) {
+      const ct = Math.cos(sp.tilt), st = Math.sin(sp.tilt);
+      const cy = Math.cos(sp.yaw), sy = Math.sin(sp.yaw);
+      const cr = Math.cos(sp.roll), sr = Math.sin(sp.roll);
+      const rot = (v) => {
+        // 先绕 X 倾，再绕 Y 偏，最后绕 Z 滚
+        let [x, y, z] = v;
+        let y1 = y * ct - z * st, z1 = y * st + z * ct;
+        let x2 = x * cy + z1 * sy, z2 = -x * sy + z1 * cy;
+        let x3 = x2 * cr - y1 * sr, y3 = x2 * sr + y1 * cr;
+        return [x3, y3, z2];
+      };
+      const e1 = rot([1, 0, 0]);
+      const e2 = rot([0, 1, 0]);
+      const at = (a) => [
+        CENTER[0] + (e1[0] * Math.cos(a) + e2[0] * Math.sin(a)) * sp.R,
+        CENTER[1] + (e1[1] * Math.cos(a) + e2[1] * Math.sin(a)) * sp.R,
+        CENTER[2] + (e1[2] * Math.cos(a) + e2[2] * Math.sin(a)) * sp.R,
+      ];
+      // 虚线：每段只画一部分
+      for (let i = 0; i < sp.dots; i++) {
+        const a = (i / sp.dots) * TAU;
+        if ((i % 10) > 6) continue;                 // 断线，形成虚线
+        const p = at(a);
+        pt(BATCH.ribbon, p[0], p[1], p[2], mixc(C.white, C.ice, 0.2 + rnd() * 0.3), 0.036 + rnd() * 0.014);
+      }
+      // 标记点
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * TAU + 0.2;
+        const p = at(a);
+        const p2 = at(a + 0.02);
+        let tx = p2[0] - p[0], ty = p2[1] - p[1], tz = p2[2] - p[2];
+        const tl = Math.hypot(tx, ty, tz) || 1;
+        tx /= tl; ty /= tl; tz /= tl;
+        const inward = [-p[0] / sp.R, -p[1] / sp.R, -p[2] / sp.R];
+        stampMark(p, [tx, ty, tz], [inward[0], inward[1], inward[2]], sp.mark, 0.26, mixc(C.white, C.ice, 0.2));
+      }
+    }
+  })();
+
+  /* ================= 音符 / 谱号：字体采样成粒子 ================= */
+  function glyphPoints(ch, sizePx, threshold) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = sizePx;
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    cx.fillStyle = '#fff';
+    cx.textAlign = 'center';
+    cx.textBaseline = 'middle';
+    cx.font = '600 ' + Math.round(sizePx * 0.82) + 'px "Segoe UI Symbol", "Apple Symbols", serif';
+    cx.fillText(ch, sizePx / 2, sizePx / 2);
+    const data = cx.getImageData(0, 0, sizePx, sizePx).data;
+    const pts = [];
+    for (let y = 0; y < sizePx; y++) {
+      for (let x = 0; x < sizePx; x++) {
+        if (data[(y * sizePx + x) * 4 + 3] > threshold) pts.push([(x - sizePx / 2) / sizePx, -(y - sizePx / 2) / sizePx]);
+      }
+    }
+    if (!pts.length) return null;
+    const xs = pts.map((p) => p[0]);
+    const bw = Math.max(...xs) - Math.min(...xs);
+    return bw > 0.75 ? null : pts;                  // 豆腐块方框丢掉
+  }
+
+  const NOTES = ['♪', '♫', '♩'].map((ch) => glyphPoints(ch, 72, 150)).filter(Boolean);
+
+  function placeGlyph(pts, cx, cy, cz, scale, right, up, col, dotSize) {
+    for (let i = 0; i < pts.length; i++) {
+      const g = pts[i];
+      const lx = (g[0] + gauss() * 0.006) * scale;
+      const ly = (g[1] + gauss() * 0.006) * scale;
+      pt(BATCH.mark,
+        cx + right[0] * lx + up[0] * ly,
+        cy + right[1] * lx + up[1] * ly,
+        cz + right[2] * lx + up[2] * ly,
+        col, dotSize + rnd() * 0.008);
+    }
+  }
+
+  // 手搓一个高音谱号：大螺旋 + 竖杆 + 底部小钩
+  const CLEF = (() => {
+    const pts = [];
+    for (let i = 0; i < 120; i++) {
+      const t = i / 119;
+      const a = t * TAU * 1.15 - 0.6;
+      const r = 0.34 - 0.16 * t;
+      pts.push([Math.sin(a) * r * 0.95 + 0.02, Math.cos(a) * r * 1.25 - 0.05]);
+    }
+    for (let i = 0; i < 40; i++) {                 // 竖杆
+      const t = i / 39;
+      pts.push([0.03, 0.55 - t * 1.15]);
+    }
+    for (let i = 0; i < 34; i++) {                 // 底部小钩
+      const t = i / 33;
+      const a = t * Math.PI * 1.4 + Math.PI * 0.5;
+      pts.push([0.03 + Math.sin(a) * 0.16, -0.60 + (1 - Math.cos(a)) * 0.16]);
+    }
+    for (let i = 0; i < 10; i++) {                 // 顶部小圆点
+      const a = (i / 10) * TAU;
+      pts.push([0.03 + Math.cos(a) * 0.05, 0.60 + Math.sin(a) * 0.05]);
+    }
+    return pts;
+  })();
+
+  (function music() {
+    // 谱号：放在谱线的左端
+    const s0 = -0.72;
+    const base = staffPoint(0, s0);
+    const { tangent, up } = staffBasis(s0);
+    placeGlyph(CLEF, base[0], base[1], base[2], 2.3, tangent, up, mixc(C.white, C.ice, 0.25), 0.022);
+
+    // 音符：几颗散落在谱线上
+    const spots = [
+      [-0.52, 1.6, 0], [-0.28, 0.9, 1], [-0.06, 2.1, 2], [0.16, -0.6, 0],
+      [0.34, 1.2, 1], [0.52, 2.4, 2], [0.66, 0.2, 0], [-0.4, -1.1, 1],
+    ];
+    for (const [s, line, gi] of spots) {
+      const p = staffPoint(line, s);
+      const { tangent, up } = staffBasis(s);
+      const g = NOTES[gi % NOTES.length];
+      placeGlyph(g, p[0], p[1] + 0.4, p[2], 1.35, tangent, up, mixc(C.white, C.ice, 0.25), 0.026);
+    }
+  })();
+
+  /* ================= 星点（极少量，别抢主体） ================= */
+  (function stars() {
+    for (let i = 0; i < 1600; i++) {
+      const r = rr(18, 70);
+      const a = rnd() * TAU, b = Math.acos(rr(-1, 1));
+      pt(BATCH.rest,
+        Math.sin(b) * Math.cos(a) * r,
+        Math.cos(b) * r * 0.7,
+        Math.sin(b) * Math.sin(a) * r,
+        mixc(C.ice, C.white, rnd()), 0.03 + Math.pow(rnd(), 3) * 0.10);
+    }
+  })();
+
+  /* ================= WebGL ================= */
   const vsPoints = `#version 300 es
   precision highp float;
   in vec3 aPos; in vec3 aCol; in float aSize; in float aPhase;
   uniform mat4 uVP; uniform vec3 uCam;
-  uniform float uTime, uSpin, uAxisY, uPx, uAlpha, uScale;
+  uniform float uTime, uSpin, uTwist, uPx, uAlpha, uScale;
   out vec3 vCol; out float vA;
   void main() {
-    float c = cos(uSpin), s = sin(uSpin);
-    vec3 pz = vec3(aPos.x * c - aPos.y * s, aPos.x * s + aPos.y * c, aPos.z);
-    vec3 py = vec3(aPos.x * c + aPos.z * s, aPos.y, -aPos.x * s + aPos.z * c);
-    vec3 p = mix(pz, py, uAxisY);
+    // 绕 Z 轴自转 + 随 z 缓慢扭转（谱线像被"编织"一样慢慢卷起来）
+    float ang = uSpin + uTwist * aPos.z;
+    float c = cos(ang), s = sin(ang);
+    vec3 p = vec3(aPos.x * c - aPos.y * s, aPos.x * s + aPos.y * c, aPos.z);
     gl_Position = uVP * vec4(p, 1.0);
     float dist = max(length(p - uCam), 0.001);
-    float tw = 0.78 + 0.22 * sin(uTime * 1.9 + aPhase * 6.2832);
-    gl_PointSize = clamp(aSize * uScale / dist * tw, 1.0, 140.0) * uPx;
-    vA = smoothstep(0.0, 4.0, dist) * (1.0 - smoothstep(45.0, 150.0, dist)) * uAlpha;
+    float tw = 0.80 + 0.20 * sin(uTime * 2.3 + aPhase * 6.2832);
+    gl_PointSize = clamp(aSize * uScale / dist * tw, 1.0, 120.0) * uPx;
+    vA = smoothstep(0.0, 3.0, dist) * (1.0 - smoothstep(60.0, 150.0, dist)) * uAlpha;
     vCol = aCol;
   }`;
   const fsPoints = `#version 300 es
@@ -477,28 +510,9 @@
     vec2 q = gl_PointCoord * 2.0 - 1.0;
     float d2 = dot(q, q);
     if (d2 > 1.0) discard;
-    float a = (exp(-d2 * 8.0) + exp(-d2 * 2.2) * 0.14) * vA;
+    float a = (exp(-d2 * 7.0) + exp(-d2 * 2.0) * 0.12) * vA;
     o = vec4(vCol * a, a);
   }`;
-  const vsLines = `#version 300 es
-  precision highp float;
-  in vec3 aPos; in vec3 aCol; in float aA;
-  uniform mat4 uVP; uniform vec3 uCam;
-  uniform float uSpin, uAlpha;
-  out vec3 vCol; out float vA;
-  void main() {
-    float c = cos(uSpin), s = sin(uSpin);
-    vec3 p = vec3(aPos.x * c - aPos.y * s, aPos.x * s + aPos.y * c, aPos.z);
-    gl_Position = uVP * vec4(p, 1.0);
-    float dist = max(length(p - uCam), 0.001);
-    vA = aA * uAlpha * smoothstep(0.0, 4.0, dist) * (1.0 - smoothstep(90.0, 220.0, dist));
-    vCol = aCol;
-  }`;
-  const fsLines = `#version 300 es
-  precision highp float;
-  in vec3 vCol; in float vA;
-  out vec4 o;
-  void main() { o = vec4(vCol * vA, vA); }`;
   const vsQuad = `#version 300 es
   in vec2 aPos; out vec2 vUv;
   void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
@@ -509,7 +523,7 @@
   void main() {
     vec3 c = texture(uTex, vUv).rgb;
     float l = max(c.r, max(c.g, c.b));
-    o = vec4(c * smoothstep(0.22, 0.72, l), 1.0);
+    o = vec4(c * smoothstep(0.42, 0.90, l), 1.0);
   }`;
   const fsBlur = `#version 300 es
   precision highp float;
@@ -529,13 +543,12 @@
   void main() {
     vec3 s = texture(uScene, vUv).rgb;
     vec3 b = texture(uBloom, vUv).rgb;
-    vec3 c = s + b * 0.82;
-    c = vec3(1.0) - exp(-c * 1.25);              // 柔和高光压缩
-    c += b * 0.22 * vec3(0.5, 0.7, 1.0);         // 冷色泛光
+    vec3 c = s + b * 0.42;
+    c = vec3(1.0) - exp(-c * 1.15);
     vec2 q = vUv - 0.5; q.x *= uAspect;
-    c *= 0.60 + 0.40 * smoothstep(1.0, 0.20, length(q));
+    c *= 0.66 + 0.34 * smoothstep(1.05, 0.15, length(q));
     float g = fract(sin(dot(vUv * vec2(1234.5, 8765.4) + uTime, vec2(12.9898, 78.233))) * 43758.5453);
-    c += (g - 0.5) * 0.014;
+    c += (g - 0.5) * 0.012;
     o = vec4(max(c, 0.0) * uFade, 1.0);
   }`;
 
@@ -562,12 +575,11 @@
   }
 
   const progPoints = program(vsPoints, fsPoints);
-  const progLines = program(vsLines, fsLines);
   const progThreshold = program(vsQuad, fsThreshold);
   const progBlur = program(vsQuad, fsBlur);
   const progComposite = program(vsQuad, fsComposite);
 
-  /* ---------------- 打包顶点 ---------------- */
+  /* ---------------- 打包 ---------------- */
   function packPoints(batches) {
     let total = 0;
     for (const b of batches) total += b.s.length;
@@ -592,7 +604,7 @@
     return { data, ranges, total };
   }
 
-  const packed = packPoints([BATCH.violin, BATCH.galaxy, BATCH.tunnel, BATCH.rest]);
+  const packed = packPoints([BATCH.violin, BATCH.ribbon, BATCH.mark, BATCH.rest]);
   const pointCount = packed.total;
 
   const vaoPoints = gl.createVertexArray();
@@ -605,26 +617,6 @@
   gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, STRIDE, 12);
   gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, STRIDE, 24);
   gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 1, gl.FLOAT, false, STRIDE, 28);
-
-  const lineVerts = L.a.length;
-  const vaoLines = gl.createVertexArray();
-  gl.bindVertexArray(vaoLines);
-  const vboLines = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, vboLines);
-  const lineData = new Float32Array(lineVerts * 7);
-  for (let i = 0; i < lineVerts; i++) {
-    lineData[i * 7 + 0] = L.p[i * 3];
-    lineData[i * 7 + 1] = L.p[i * 3 + 1];
-    lineData[i * 7 + 2] = L.p[i * 3 + 2];
-    lineData[i * 7 + 3] = L.c[i * 3];
-    lineData[i * 7 + 4] = L.c[i * 3 + 1];
-    lineData[i * 7 + 5] = L.c[i * 3 + 2];
-    lineData[i * 7 + 6] = L.a[i];
-  }
-  gl.bufferData(gl.ARRAY_BUFFER, lineData, gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0);
-  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 28, 12);
-  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 28, 24);
   gl.bindVertexArray(null);
 
   const vaoQuad = gl.createVertexArray();
@@ -635,7 +627,7 @@
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   gl.bindVertexArray(null);
 
-  /* ---------------- 帧缓冲：场景 + 1/4 分辨率泛光 ---------------- */
+  /* ---------------- 帧缓冲 ---------------- */
   function makeTarget(w, h) {
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -670,7 +662,7 @@
   resize();
   window.addEventListener('resize', resize);
 
-  /* ---------------- 相机矩阵 ---------------- */
+  /* ---------------- 矩阵 ---------------- */
   function perspective(out, fovy, aspect, near, far) {
     const f = 1 / Math.tan(fovy / 2);
     out[0] = f / aspect; out[1] = 0; out[2] = 0; out[3] = 0;
@@ -704,39 +696,40 @@
   }
 
   const proj = new Float32Array(16), view = new Float32Array(16), vp = new Float32Array(16);
-  const FOV = 54 * Math.PI / 180;
-  const LOOP = 24;                     // 一次完整运镜的秒数
+  const FOV = 52 * Math.PI / 180;
+  const LOOP = 26;
   const cam = { x: 0, y: 0, z: 0 };
+  const TARGET = [0, 1.0, BODY_CZ];
 
-  // 竖屏时横向视野会变窄把琴裁掉，按宽高比放大纵向 FOV
   function fovY() {
     const aspect = W / H;
     if (aspect >= 1) return FOV;
-    return Math.min(80 * Math.PI / 180, 2 * Math.atan(Math.tan(FOV / 2) / aspect));
+    return Math.min(78 * Math.PI / 180, 2 * Math.atan(Math.tan(FOV / 2) / aspect));
   }
 
-  // 椭圆轨道：侧面近距离（看面板）/ 轴线远距离（穿隧道）
+  // 慢速环绕：近距离掠过琴身，再退到全景（参考里也是围着琴转 + 推拉）
   function camera(t, dragX, dragY, zoom) {
-    if (FRONT) {                       // 调试 / 展示用：固定机位正视小提琴
-      const n = FRONT === 'side' ? [0, 1, 0] : [0, 0.55, 1];
-      const d = 15 * zoom;
-      cam.x = n[0] * d; cam.y = 1.5 + n[1] * d; cam.z = n[2] * d;
-      lookAt(view, [cam.x, cam.y, cam.z], [0, 0.5, 0.5], [0, 1, 0]);
-      perspective(proj, fovY(), W / H, 0.05, 340);
+    if (FRONT) {
+      const d = 16 * zoom;
+      if (FRONT === 'face') {                       // 正上方俯视，检查琴的轮廓
+        cam.x = TARGET[0]; cam.y = TARGET[1] + d * 1.6; cam.z = TARGET[2] + 0.001;
+        lookAt(view, [cam.x, cam.y, cam.z], TARGET, [0, 0, 1]);
+      } else {
+        cam.x = 0; cam.y = TARGET[1] + 0.6 * d; cam.z = TARGET[2] + d;
+        lookAt(view, [cam.x, cam.y, cam.z], TARGET, [0, 1, 0]);
+      }
+      perspective(proj, fovY(), W / H, 0.05, 320);
       multiply(vp, proj, view);
       return;
     }
     const az = (t / LOOP) * TAU + dragX;
-    const A = 12.5, B = 46;                                     // 侧向 / 轴向半径
-    const r = 1 / Math.hypot(Math.sin(az) / A, Math.cos(az) / B);
+    const r = 7.8 - 2.6 * Math.cos(az) + 0.8 * Math.sin(az * 2);    // 4.4 .. 11.2
     cam.x = r * Math.sin(az) * zoom;
-    cam.z = -r * Math.cos(az) * zoom;
-    cam.y = 15 * Math.sin(az) + 1.5 + dragY * 16;
-    const roll = 0.5 * Math.sin(az * 2 + 0.6);
-    const up = [Math.sin(roll), Math.cos(roll), 0];
-    const target = [0, -1.5, 0.6 * Math.cos(az)];
-    lookAt(view, [cam.x, cam.y, cam.z], target, up);
-    perspective(proj, fovY(), W / H, 0.05, 340);
+    cam.z = TARGET[2] - r * Math.cos(az) * zoom;
+    cam.y = TARGET[1] + 1.55 * r + 1.0 + dragY * 12;                 // 约 55° 俯视，琴的面板才立得住
+    const roll = 0.20 * Math.sin(az * 1.5 + 0.4);
+    lookAt(view, [cam.x, cam.y, cam.z], TARGET, [Math.sin(roll), Math.cos(roll), 0]);
+    perspective(proj, fovY(), W / H, 0.05, 320);
     multiply(vp, proj, view);
   }
 
@@ -755,18 +748,18 @@
     want.y = clamp(want.y - (e.clientY - lastY) * 0.004, -0.5, 0.9);
     lastX = e.clientX; lastY = e.clientY;
   });
-  const stop = () => { dragging = false; };
-  canvas.addEventListener('pointerup', stop);
-  canvas.addEventListener('pointercancel', stop);
+  const stopDrag = () => { dragging = false; };
+  canvas.addEventListener('pointerup', stopDrag);
+  canvas.addEventListener('pointercancel', stopDrag);
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
-    zoomWant = clamp(zoomWant * (1 + e.deltaY * 0.0009), 0.55, 1.6);
+    zoomWant = clamp(zoomWant * (1 + e.deltaY * 0.0009), 0.5, 1.6);
   }, { passive: false });
 
-  /* ---------------- 渲染循环 ---------------- */
+  /* ---------------- 渲染 ---------------- */
   const params = new URLSearchParams(location.search);
   const freeze = params.has('t') ? parseFloat(params.get('t')) : null;
-  const FRONT = params.get('view');        // 'top' | 'side'：固定机位看琴（调试 / 展示用）
+  const FRONT = params.get('view');
   const t0 = performance.now();
 
   function render(now) {
@@ -781,27 +774,12 @@
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, sceneT.fb);
     gl.viewport(0, 0, W, H);
-    gl.clearColor(0.007, 0.010, 0.022, 1);
+    gl.clearColor(0.040, 0.043, 0.050, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.disable(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
 
-    gl.useProgram(progLines.p);
-    gl.uniformMatrix4fv(progLines.u.uVP, false, vp);
-    gl.uniform3f(progLines.u.uCam, cam.x, cam.y, cam.z);
-    gl.uniform1f(progLines.u.uSpin, t * 0.03);
-    gl.uniform1f(progLines.u.uAlpha, 1.0);
-    gl.bindVertexArray(vaoLines);
-    gl.drawArrays(gl.LINES, 0, lineVerts);
-
-    // 四批粒子：小提琴（轻微摇摆）/ 星河（绕 Y 自转）/ 隧道环 / 其余（慢转）
-    // 隧道环只在镜头贴近中轴（穿隧道）时全亮；侧看时压暗，避免变成一排竖帘
-    const camR = Math.hypot(cam.x, cam.y);
-    const ringDim = lerp(0.02, 1.0, smoothstep(24, 8, camR));
-    const spins = [0.09 * Math.sin(t * 0.45), t * 0.28, t * 0.05, t * 0.03];
-    const axes = [0, 1, 0, 0];
-    const alphas = FRONT ? [0.66, 0.05, 0, 0.05] : [0.66, 0.58, 0.9 * ringDim, 0.8];
     gl.useProgram(progPoints.p);
     gl.uniformMatrix4fv(progPoints.u.uVP, false, vp);
     gl.uniform3f(progPoints.u.uCam, cam.x, cam.y, cam.z);
@@ -809,10 +787,18 @@
     gl.uniform1f(progPoints.u.uPx, 1.0);
     gl.uniform1f(progPoints.u.uScale, pxScale);
     gl.bindVertexArray(vaoPoints);
+
+    // 小提琴：极慢自转；谱线与标记：随 z 扭转，像被一点点编织起来
+    const batches = [
+      { spin: t * 0.10, twist: 0, alpha: 1.25 },
+      { spin: 0, twist: 0.055 * Math.sin(t * 0.22), alpha: 0.95 },
+      { spin: 0, twist: 0.055 * Math.sin(t * 0.22), alpha: 1.0 },
+      { spin: 0, twist: 0, alpha: 0.7 },
+    ];
     for (let b = 0; b < 4; b++) {
-      gl.uniform1f(progPoints.u.uSpin, spins[b]);
-      gl.uniform1f(progPoints.u.uAxisY, axes[b]);
-      gl.uniform1f(progPoints.u.uAlpha, alphas[b]);
+      gl.uniform1f(progPoints.u.uSpin, batches[b].spin);
+      gl.uniform1f(progPoints.u.uTwist, batches[b].twist);
+      gl.uniform1f(progPoints.u.uAlpha, batches[b].alpha);
       gl.drawArrays(gl.POINTS, packed.ranges[b].first, packed.ranges[b].count);
     }
 
@@ -831,12 +817,12 @@
     gl.uniform1i(progBlur.u.uTex, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, bloomB.fb);
     gl.bindTexture(gl.TEXTURE_2D, bloomA.tex);
-    gl.uniform2f(progBlur.u.uDir, 1.4 / bloomA.w, 0);
+    gl.uniform2f(progBlur.u.uDir, 1.3 / bloomA.w, 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, bloomA.fb);
     gl.bindTexture(gl.TEXTURE_2D, bloomB.tex);
-    gl.uniform2f(progBlur.u.uDir, 0, 1.4 / bloomA.h);
+    gl.uniform2f(progBlur.u.uDir, 0, 1.3 / bloomA.h);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -848,7 +834,7 @@
     gl.uniform1i(progComposite.u.uBloom, 1);
     gl.uniform1f(progComposite.u.uAspect, W / H);
     gl.uniform1f(progComposite.u.uTime, t);
-    gl.uniform1f(progComposite.u.uFade, smoothstep(0, 1.6, t));
+    gl.uniform1f(progComposite.u.uFade, smoothstep(0, 1.4, t));
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     requestAnimationFrame(render);
@@ -862,5 +848,5 @@
 
   document.getElementById('tag').textContent =
     'WEBGL2 · ' + Math.round(pointCount / 1000) + 'K PARTICLES · 拖拽可转视角';
-  window.__scene = { points: pointCount, lines: lineVerts, batches: packed.ranges.map((r) => r.count) };
+  window.__scene = { points: pointCount, batches: packed.ranges.map((r) => r.count) };
 })();
