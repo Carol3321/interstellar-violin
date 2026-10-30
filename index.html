@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>星际轨道 · 粒子小提琴</title>
+<meta name="description" content="纯 WebGL2 粒子复刻：星河、粒子小提琴与星际轨道隧道。无依赖、无贴图，全部由代码生成。">
+<meta name="theme-color" content="#04060d">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #04060d; overflow: hidden; }
+  body { font: 12px/1.6 ui-sans-serif, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+         color: #dfe8ff; -webkit-font-smoothing: antialiased; }
+  #c { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  #c:active { cursor: grabbing; }
+  .hud { position: fixed; left: max(20px, env(safe-area-inset-left)); bottom: max(18px, env(safe-area-inset-bottom));
+         pointer-events: none; opacity: 0; transition: opacity 1.6s ease 1.1s; }
+  .hud.on { opacity: 1; }
+  .hud h1 { margin: 0; font-size: 13px; font-weight: 500; letter-spacing: .42em; text-transform: uppercase;
+            color: #eaf1ff; text-shadow: 0 0 24px #6f8dff88; }
+  .hud p { margin: 6px 0 0; font-size: 11px; letter-spacing: .18em; color: #8fa5d8; }
+  .tag { position: fixed; right: max(20px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom));
+         font-size: 10px; letter-spacing: .22em; color: #5d6f9c; pointer-events: none;
+         opacity: 0; transition: opacity 1.6s ease 1.6s; }
+  .tag.on { opacity: 1; }
+  #nogl { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; padding: 32px;
+          color: #9fb2dd; letter-spacing: .1em; }
+  #nogl[hidden] { display: none; }
+  @media (prefers-reduced-motion: reduce) { .hud, .tag { transition: none; } }
+  @media (max-width: 640px) {
+    .tag { display: none; }
+    .hud h1 { font-size: 12px; letter-spacing: .32em; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud" id="hud">
+  <h1>星际轨道</h1>
+  <p>粒子小提琴 · 代码编织的星河</p>
+</div>
+<div class="tag" id="tag">WEBGL2 · 120K PARTICLES · 拖拽可转视角</div>
+<div id="nogl" hidden>此浏览器不支持 WebGL2，请换用较新的 Chrome / Edge / Safari。</div>
+<script src="app.js"></script>
+</body>
+</html>
